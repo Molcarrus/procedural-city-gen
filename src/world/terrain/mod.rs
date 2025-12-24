@@ -1,4 +1,4 @@
-use bevy_egui::egui::Vec2;
+use bevy::prelude::*;
 
 mod tessellation;
 

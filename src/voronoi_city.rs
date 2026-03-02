@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use bevy::{math::VectorSpace, prelude::*};
+use bevy::prelude::*;
 use delaunator::{Point, triangulate};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
@@ -72,7 +72,7 @@ fn circumcenter(a: &Vec2, b: &Vec2, c: &Vec2) -> Vec2 {
 
     let ux = ((ax * ax + ay * ay) * (by - cy)
         + (bx * bx + by * by) * (cy - ay)
-        + (cx * cx + cy * cy) * (ay * by))
+        + (cx * cx + cy * cy) * (ay - by))
         / d;
     let uy = ((ax * ax + ay * ay) * (cx - bx)
         + (bx * bx + by * by) * (ax - cx)
@@ -82,7 +82,7 @@ fn circumcenter(a: &Vec2, b: &Vec2, c: &Vec2) -> Vec2 {
     Vec2::new(ux as f32, uy as f32)
 }
 
-fn build_voronoi_Cells(
+fn build_voronoi_cells(
     points: &[Vec2],
     traingulation: &delaunator::Triangulation,
     bounds_min: Vec2,
@@ -90,7 +90,7 @@ fn build_voronoi_Cells(
 ) -> Vec<Vec<Vec2>> {
     let num_points = points.len();
     let triangles = &traingulation.triangles;
-    let half_edges = &traingulation.halfedges;
+    let _half_edges = &traingulation.halfedges;
     let num_triangles = triangles.len() / 3;
 
     let circumcenters: Vec<Vec2> = (0..num_triangles)
@@ -224,7 +224,7 @@ fn lloyd_relazation(points: &[Vec2], bounds_min: Vec2, bounds_max: Vec2) -> Vec<
 
     let triangulation = triangulate(&delaunay_points);
 
-    let cells = build_voronoi_Cells(points, &triangulation, bounds_min, bounds_max);
+    let cells = build_voronoi_cells(points, &triangulation, bounds_min, bounds_max);
 
     points
         .iter()
@@ -233,7 +233,7 @@ fn lloyd_relazation(points: &[Vec2], bounds_min: Vec2, bounds_max: Vec2) -> Vec<
             if cells[i].len() >= 3 {
                 let centroid = polygon_centroid(&cells[i]);
                 Vec2::new(
-                    centroid.x.clamp(bounds_min.x + 1.0, bounds_max.x * 1.0),
+                    centroid.x.clamp(bounds_min.x + 1.0, bounds_max.x - 1.0),
                     centroid.y.clamp(bounds_min.y + 1.0, bounds_max.y - 1.0),
                 )
             } else {
@@ -273,7 +273,7 @@ impl VoronoiLayout {
 
         let triangulation = triangulate(&delaunay_points);
 
-        let cells = build_voronoi_Cells(&points, &triangulation, bounds_min, bounds_max);
+        let cells = build_voronoi_cells(&points, &triangulation, bounds_min, bounds_max);
 
         let city_center = Vec2::new(size / 2.0, size / 2.0);
         let mut blocks = Vec::new();
@@ -330,7 +330,7 @@ impl VoronoiLayout {
             let mut edges = Vec::new();
             for j in 0..cell_verts.len() {
                 let a = cell_verts[j];
-                let b = cell_verts[(j + 1) & cell_verts.len()];
+                let b = cell_verts[(j + 1) % cell_verts.len()];
 
                 let key = if (a.x, a.y) < (b.x, b.y) {
                     (

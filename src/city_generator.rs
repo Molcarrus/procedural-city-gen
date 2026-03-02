@@ -132,7 +132,7 @@ fn spawn_buildings_in_block(
                 min_y + step_y * (gy as f32 + 0.5) + jitter_y,
             );
 
-            if point_in_polygon(pos, &shrunk) {
+            if !point_in_polygon(pos, &shrunk) {
                 continue;
             }
 

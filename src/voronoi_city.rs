@@ -409,7 +409,7 @@ pub fn polygon_area(vertices: &[Vec2]) -> f32 {
     area.abs() / 2.0
 }
 
-fn point_in_polygon(point: Vec2, polygon: &[Vec2]) -> bool {
+pub fn point_in_polygon(point: Vec2, polygon: &[Vec2]) -> bool {
     let mut inside = false;
     let n = polygon.len();
     let mut j = n - 1;

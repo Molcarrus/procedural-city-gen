@@ -1,3 +1,4 @@
+mod building;
 mod voronoi_city;
 
 fn main() {

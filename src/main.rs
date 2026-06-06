@@ -21,6 +21,7 @@ use bevy_egui::EguiPlugin;
 use bevy_rts_camera::{RtsCamera, RtsCameraControls, RtsCameraPlugin};
 
 mod config;
+mod core;
 
 fn main() -> AppExit {
     App::new()

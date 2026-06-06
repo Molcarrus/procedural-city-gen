@@ -1,9 +1,9 @@
 pub const CANVS_WIDTH: f32 = 500.0;
 pub const CANVAS_HEIGHT: f32 = 500.0;
 
-pub const INITIAL_SPEED: u64 = 1512086461918454205;
-pub const POINT_CLOUD: usize = 30;
-pub const SPIRAL_SPEED: f32 = 3.0;
+pub const INITIAL_SEED: u64 = 1512086461918454205;
+pub const POINT_COUNT: usize = 30;
+pub const SPIRAL_SPREAD: f32 = 3.0;
 
 pub const BUILDING_AREA_MIN: f32 = 15.0;
 pub const BUILDING_AREA_MAX: f32 = 40.0;

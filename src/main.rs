@@ -23,6 +23,8 @@ use bevy_rts_camera::{RtsCamera, RtsCameraControls, RtsCameraPlugin};
 mod config;
 mod core;
 
+use core::*;
+
 fn main() -> AppExit {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -42,8 +44,20 @@ fn main() -> AppExit {
             default_color: Color::BLACK,
         })
         .insert_resource(ClearColor(Color::BLACK))
+        .insert_resource(Seed(config::INITIAL_SEED))
+        .insert_resource(Params::default())
+        .insert_resource(SkeletonData::new_empty(vec![]))
+        .insert_resource(GenerationMode::default())
+        .insert_resource(EditMode::default())
+        .insert_resource(DragState::default())
+        .insert_resource(HoveredPoint::default())
+        .insert_resource(SelectedPoint::default())
+        .insert_resource(GizmosVisible(false))
+        .insert_resource(Is3D(true))
         .add_systems(Startup, (setup_camera, setup_light, maximize_window))
         .add_systems(Update, handle_exit)
+        .add_message::<RegenerateEvent>()
+        .add_message::<ExportEvent>()
         .run()
 }
 

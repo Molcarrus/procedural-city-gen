@@ -22,6 +22,8 @@ use bevy_rts_camera::{RtsCamera, RtsCameraControls, RtsCameraPlugin};
 
 mod config;
 mod core;
+mod generation;
+mod geometry;
 
 use core::*;
 

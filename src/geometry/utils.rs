@@ -40,7 +40,7 @@ pub fn polygon_centroid(polygon: &Polygon, area: f32) -> Vec2 {
     Vec2::new((cx / area6) as f32, (cy / area6) as f32)
 }
 
-pub fn line_segment_interaction(p1: Vec2, p2: Vec2, p3: Vec2, p4: Vec2) -> Option<Vec2> {
+pub fn line_segment_intersection(p1: Vec2, p2: Vec2, p3: Vec2, p4: Vec2) -> Option<Vec2> {
     let s1 = p2 - p1;
     let s2 = p4 - p3;
 
@@ -156,4 +156,175 @@ pub fn longest_edge(polygon: &Polygon) -> Option<(usize, Vec2, f32)> {
     }
 
     Some((best_idx, polygon[best_idx], max_len))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn approx_eq(a: f32, b: f32) -> bool {
+        (a - b).abs() < 1e-4
+    }
+
+    fn approx_eq2(a: Vec2, b: Vec2) -> bool {
+        approx_eq(a.x, b.x) && approx_eq(a.y, b.y)
+    }
+
+    // unit square CCW
+    fn unit_square() -> Polygon {
+        vec![
+            Vec2::new(0.0, 0.0),
+            Vec2::new(1.0, 0.0),
+            Vec2::new(1.0, 1.0),
+            Vec2::new(0.0, 1.0),
+        ]
+    }
+
+    #[test]
+    fn test_polygon_area_unit_square() {
+        let sq = unit_square();
+        // CCW winding -> positive area
+        assert!(approx_eq(polygon_area(&sq).abs(), 1.0));
+    }
+
+    #[test]
+    fn test_polygon_area_degenerate() {
+        assert_eq!(polygon_area(&vec![Vec2::ZERO, Vec2::ONE]), 0.0);
+        assert_eq!(polygon_area(&vec![]), 0.0);
+    }
+
+    #[test]
+    fn test_polygon_area_triangle() {
+        let tri = vec![
+            Vec2::new(0.0, 0.0),
+            Vec2::new(4.0, 0.0),
+            Vec2::new(0.0, 3.0),
+        ];
+        assert!(approx_eq(polygon_area(&tri).abs(), 6.0));
+    }
+
+    #[test]
+    fn test_polygon_centroid_unit_square() {
+        let sq = unit_square();
+        let area = polygon_area(&sq);
+        let centroid = polygon_centroid(&sq, area);
+        assert!(approx_eq2(centroid, Vec2::new(0.5, 0.5)));
+    }
+
+    #[test]
+    fn test_polygon_centroid_degenerate() {
+        let result = polygon_centroid(&vec![Vec2::ZERO], 0.0);
+        assert_eq!(result, Vec2::ZERO);
+    }
+
+    #[test]
+    fn test_line_segment_intersection_cross() {
+        // Two segments crossing at (0.5, 0.5)
+        let result = line_segment_intersection(
+            Vec2::new(0.0, 0.0),
+            Vec2::new(1.0, 1.0),
+            Vec2::new(0.0, 1.0),
+            Vec2::new(1.0, 0.0),
+        );
+        assert!(result.is_some());
+        assert!(approx_eq2(result.unwrap(), Vec2::new(0.5, 0.5)));
+    }
+
+    #[test]
+    fn test_line_segment_intersection_parallel() {
+        let result = line_segment_intersection(
+            Vec2::new(0.0, 0.0),
+            Vec2::new(1.0, 0.0),
+            Vec2::new(0.0, 1.0),
+            Vec2::new(1.0, 1.0),
+        );
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_line_segment_intersection_no_overlap() {
+        let result = line_segment_intersection(
+            Vec2::new(0.0, 0.0),
+            Vec2::new(0.4, 0.4),
+            Vec2::new(0.6, 0.6),
+            Vec2::new(1.0, 1.0),
+        );
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_point_in_polygon_inside() {
+        let sq = unit_square();
+        assert!(point_in_polygon(&Vec2::new(0.5, 0.5), &sq));
+    }
+
+    #[test]
+    fn test_point_in_polygon_outside() {
+        let sq = unit_square();
+        assert!(!point_in_polygon(&Vec2::new(2.0, 2.0), &sq));
+    }
+
+    #[test]
+    fn test_point_in_polygon_degenerate() {
+        assert!(!point_in_polygon(&Vec2::ZERO, &vec![Vec2::ZERO, Vec2::ONE]));
+    }
+
+    #[test]
+    fn test_point_to_segment_distance_perpendicular() {
+        let d = point_to_segment_distance(
+            Vec2::new(0.5, 1.0),
+            Vec2::new(0.0, 0.0),
+            Vec2::new(1.0, 0.0),
+        );
+        assert!(approx_eq(d, 1.0));
+    }
+
+    #[test]
+    fn test_point_to_segment_distance_endpoint() {
+        let d = point_to_segment_distance(
+            Vec2::new(2.0, 0.0),
+            Vec2::new(0.0, 0.0),
+            Vec2::new(1.0, 0.0),
+        );
+        assert!(approx_eq(d, 1.0));
+    }
+
+    #[test]
+    fn test_longest_edge_square() {
+        let sq = unit_square();
+        let result = longest_edge(&sq);
+        assert!(result.is_some());
+        let (_, _, len) = result.unwrap();
+        assert!(approx_eq(len, 1.0));
+    }
+
+    #[test]
+    fn test_longest_edge_degenerate() {
+        assert!(longest_edge(&vec![Vec2::ZERO]).is_none());
+    }
+
+    #[test]
+    fn test_circumcenter_equilateral() {
+        use spade::Point2;
+        // equilateral triangle, circumcenter at centroid-ish
+        let p1 = Point2::new(0.0f64, 0.0);
+        let p2 = Point2::new(2.0f64, 0.0);
+        let p3 = Point2::new(1.0f64, 3.0f64.sqrt());
+        let (cx, cy) = calculate_circumcenter(p1, p2, p3);
+        // circumcenter should be at (1.0, 1/sqrt(3))
+        assert!((cx - 1.0).abs() < 1e-4);
+        assert!((cy - 1.0 / 3.0f64.sqrt()).abs() < 1e-4);
+    }
+
+    #[test]
+    fn test_circumcenter_collinear_fallback() {
+        use spade::Point2;
+        let p1 = Point2::new(0.0f64, 0.0);
+        let p2 = Point2::new(1.0f64, 0.0);
+        let p3 = Point2::new(2.0f64, 0.0);
+        // collinear -> falls back to centroid
+        let (cx, cy) = calculate_circumcenter(p1, p2, p3);
+        assert!((cx - 1.0).abs() < 1e-4);
+        assert!(cy.abs() < 1e-4);
+    }
 }

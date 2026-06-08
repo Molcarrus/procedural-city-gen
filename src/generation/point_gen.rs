@@ -237,3 +237,121 @@ pub fn relax_points(
 
     result
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_generate_spiral_points_count() {
+        let pts = generate_spiral_points(20, 500.0, 500.0, 3.0, 42);
+        assert_eq!(pts.len(), 20);
+    }
+
+    #[test]
+    fn test_generate_spiral_points_within_bounds() {
+        let pts = generate_spiral_points(50, 500.0, 500.0, 3.0, 42);
+        for p in &pts {
+            assert!(p.x.abs() <= 500.0);
+            assert!(p.z.abs() <= 500.0);
+            assert_eq!(p.y, 0.0);
+        }
+    }
+
+    #[test]
+    fn test_generate_spiral_points_deterministic() {
+        let a = generate_spiral_points(10, 500.0, 500.0, 3.0, 99);
+        let b = generate_spiral_points(10, 500.0, 500.0, 3.0, 99);
+        for (pa, pb) in a.iter().zip(b.iter()) {
+            assert_eq!(pa, pb);
+        }
+    }
+
+    #[test]
+    fn test_generate_boundary_polygon_count() {
+        let poly = generate_boundary_polygon(6, 50.0, 42);
+        assert_eq!(poly.len(), 6);
+    }
+
+    #[test]
+    fn test_generate_boundary_polygon_roughly_circular() {
+        let poly = generate_boundary_polygon(8, 50.0, 42);
+        for v in &poly {
+            // With ±20% variation the radius stays within 40..60
+            let r = v.length();
+            assert!(r > 35.0 && r < 65.0, "radius out of range: {r}");
+        }
+    }
+
+    #[test]
+    fn test_generate_boundary_polygon_deterministic() {
+        let a = generate_boundary_polygon(4, 75.0, 12345);
+        let b = generate_boundary_polygon(4, 75.0, 12345);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn test_generate_boundary_generators_nonempty() {
+        let poly = generate_boundary_polygon(4, 50.0, 1);
+        let gens = generate_boundary_generators(&poly, 12.0, 1.0);
+        assert!(!gens.is_empty());
+        // Each edge produces at least 2 generators (inner + outer)
+        assert!(gens.len() >= poly.len() * 2);
+    }
+
+    #[test]
+    fn test_generate_boundary_generators_all_at_y_zero() {
+        let poly = generate_boundary_polygon(4, 50.0, 1);
+        let gens = generate_boundary_generators(&poly, 12.0, 1.0);
+        for g in &gens {
+            assert_eq!(g.y, 0.0);
+        }
+    }
+
+    #[test]
+    fn test_generate_road_generators_empty_for_short_path() {
+        let path = vec![Vec3::new(0.0, 0.0, 0.0)];
+        let gens = generate_road_generators(&path);
+        assert!(gens.is_empty());
+    }
+
+    #[test]
+    fn test_generate_road_generators_produces_pairs() {
+        let path = vec![Vec3::new(-20.0, 0.0, 0.0), Vec3::new(20.0, 0.0, 0.0)];
+        let gens = generate_road_generators(&path);
+        // Must be even: always generated in pairs
+        assert!(gens.len() % 2 == 0);
+        assert!(!gens.is_empty());
+    }
+
+    #[test]
+    fn test_relax_points_preserves_count() {
+        let regular = generate_spiral_points(10, 500.0, 500.0, 3.0, 42);
+        let fixed: Vec<Vec3> = vec![Vec3::new(0.0, 0.0, 0.0)];
+        let result = relax_points(regular, fixed.clone(), 2, 500.0, 500.0);
+        // total = regular + fixed
+        assert_eq!(result.len(), 10 + fixed.len());
+    }
+
+    #[test]
+    fn test_relax_points_fixed_unchanged() {
+        let regular = generate_spiral_points(10, 500.0, 500.0, 3.0, 42);
+        let fixed = vec![Vec3::new(99.0, 0.0, 99.0)];
+        let result = relax_points(regular, fixed.clone(), 3, 500.0, 500.0);
+        // Fixed points are appended at the end
+        let last = *result.last().unwrap();
+        assert!((last.x - 99.0).abs() < 0.01);
+        assert!((last.z - 99.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_relax_points_within_bounds() {
+        let regular = generate_spiral_points(20, 500.0, 500.0, 3.0, 7);
+        let fixed = vec![];
+        let result = relax_points(regular, fixed, 2, 500.0, 500.0);
+        for p in &result {
+            assert!(p.x.abs() <= 500.0);
+            assert!(p.z.abs() <= 500.0);
+        }
+    }
+}

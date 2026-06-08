@@ -185,3 +185,153 @@ pub fn apply_voronoi_to_skeleton(
     skeleton.circumcenters = result.circumcenters;
     skeleton.cells = result.cells;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::generation::point_gen::{
+        generate_boundary_generators, generate_boundary_polygon, generate_spiral_points,
+        relax_points,
+    };
+
+    fn make_test_skeleton() -> (Vec<Vec3>, Vec<Vec2>) {
+        let seed = 42u64;
+        let boundary = generate_boundary_polygon(6, 50.0, seed);
+        let boundary_gens = generate_boundary_generators(&boundary, 12.0, 1.0);
+        let regular = generate_spiral_points(20, 500.0, 500.0, 3.0, seed);
+        let all = relax_points(regular, boundary_gens, 2, 500.0, 500.0);
+        (all, boundary)
+    }
+
+    #[test]
+    fn test_build_voronoi_produces_cells() {
+        let (generators, boundary) = make_test_skeleton();
+        let result = build_voronoi(&generators, &boundary, 0.01);
+        assert!(!result.cells.is_empty(), "should produce at least one cell");
+    }
+
+    #[test]
+    fn test_build_voronoi_cells_have_minimum_vertices() {
+        let (generators, boundary) = make_test_skeleton();
+        let result = build_voronoi(&generators, &boundary, 0.01);
+        for cell in &result.cells {
+            assert!(cell.len() >= 3, "each cell must have at least 3 vertices");
+        }
+    }
+
+    #[test]
+    fn test_build_voronoi_cell_indices_in_bounds() {
+        let (generators, boundary) = make_test_skeleton();
+        let result = build_voronoi(&generators, &boundary, 0.01);
+        let num_circumcenters = result.circumcenters.len();
+        for cell in &result.cells {
+            for &idx in cell {
+                assert!(
+                    idx < num_circumcenters,
+                    "cell index {idx} out of bounds (total: {num_circumcenters})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_build_voronoi_circumcenters_nonempty() {
+        let (generators, boundary) = make_test_skeleton();
+        let result = build_voronoi(&generators, &boundary, 0.01);
+        assert!(!result.circumcenters.is_empty());
+    }
+
+    #[test]
+    fn test_build_voronoi_deterministic() {
+        let (generators, boundary) = make_test_skeleton();
+        let r1 = build_voronoi(&generators, &boundary, 0.01);
+        let r2 = build_voronoi(&generators, &boundary, 0.01);
+        assert_eq!(r1.cells.len(), r2.cells.len());
+        assert_eq!(r1.circumcenters.len(), r2.circumcenters.len());
+    }
+
+    #[test]
+    fn test_build_voronoi_empty_generators() {
+        let boundary = generate_boundary_polygon(4, 50.0, 1);
+        let result = build_voronoi(&[], &boundary, 0.01);
+        assert!(result.cells.is_empty());
+        assert!(result.circumcenters.is_empty());
+    }
+
+    #[test]
+    fn test_merge_circumcenters_no_merge_needed() {
+        // Points far apart should not be merged
+        let pts = vec![
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(10.0, 0.0, 0.0),
+            Vec3::new(20.0, 0.0, 0.0),
+        ];
+        let (merged, mapping) = merge_circumcenters(&pts, 0.01);
+        assert_eq!(merged.len(), 3);
+        assert_eq!(mapping.len(), 3);
+    }
+
+    #[test]
+    fn test_merge_circumcenters_all_merge() {
+        // Points very close together should merge into one
+        let pts = vec![
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.001, 0.0, 0.0),
+            Vec3::new(0.002, 0.0, 0.0),
+        ];
+        let (merged, _mapping) = merge_circumcenters(&pts, 0.1);
+        assert_eq!(merged.len(), 1);
+    }
+
+    #[test]
+    fn test_merge_circumcenters_averaged_position() {
+        let pts = vec![
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.0, 0.0, 0.0), // identical
+        ];
+        let (merged, _) = merge_circumcenters(&pts, 0.1);
+        assert_eq!(merged.len(), 1);
+        assert!((merged[0].x).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_apply_voronoi_to_skeleton() {
+        let boundary = generate_boundary_polygon(4, 50.0, 1);
+        let mut skeleton = SkeletonData::new_empty(boundary.clone());
+
+        let generators = vec![Vec3::new(1.0, 0.0, 2.0)];
+        let result = VoronoiResult {
+            circumcenters: vec![
+                Vec3::new(0.0, 0.0, 0.0),
+                Vec3::new(1.0, 0.0, 0.0),
+                Vec3::new(0.0, 0.0, 1.0),
+            ],
+            cells: vec![vec![0, 1, 2]],
+        };
+
+        apply_voronoi_to_skeleton(&mut skeleton, generators.clone(), result);
+
+        assert_eq!(skeleton.generator_points.len(), 1);
+        assert_eq!(skeleton.circumcenters.len(), 3);
+        assert_eq!(skeleton.cells.len(), 1);
+        // Road path and boundary should be untouched
+        assert!(skeleton.road_path.is_empty());
+        assert_eq!(skeleton.boundary, boundary);
+    }
+
+    #[test]
+    fn test_skeleton_is_valid_after_voronoi() {
+        let (generators, boundary) = make_test_skeleton();
+        let mut skeleton = SkeletonData::new_empty(boundary.clone());
+        let result = build_voronoi(&generators, &boundary, 0.01);
+        apply_voronoi_to_skeleton(&mut skeleton, generators, result);
+        assert!(skeleton.is_valid());
+    }
+
+    #[test]
+    fn test_skeleton_invalid_when_empty() {
+        let boundary = generate_boundary_polygon(4, 50.0, 1);
+        let skeleton = SkeletonData::new_empty(boundary);
+        assert!(!skeleton.is_valid());
+    }
+}

@@ -24,6 +24,8 @@ mod config;
 mod core;
 mod generation;
 mod geometry;
+mod subdivision;
+mod voronoi;
 
 use core::*;
 

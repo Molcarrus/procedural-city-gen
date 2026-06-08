@@ -24,10 +24,14 @@ mod config;
 mod core;
 mod generation;
 mod geometry;
+mod rendering;
 mod subdivision;
+mod town;
 mod voronoi;
 
 use core::*;
+
+use crate::town::TownPlugin;
 
 fn main() -> AppExit {
     App::new()
@@ -43,6 +47,7 @@ fn main() -> AppExit {
         .add_plugins(FrameTimeDiagnosticsPlugin::default())
         .add_plugins(WireframePlugin::default())
         .add_plugins(RtsCameraPlugin)
+        .add_plugins(TownPlugin)
         .insert_resource(WireframeConfig {
             global: true,
             default_color: Color::BLACK,

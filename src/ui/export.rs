@@ -2,22 +2,36 @@ use std::fmt::Write as _;
 
 use bevy::ecs::{
     message::MessageReader,
-    system::Query,
+    system::{Query, ResMut},
 };
 
-use crate::core::{Building, ExportEvent, OpenSpace};
+use crate::{
+    core::{Building, ExportEvent, OpenSpace},
+    ui::ExportStatus,
+};
 
 pub fn handle_export(
     mut events: MessageReader<ExportEvent>,
     buildings: Query<&Building>,
     open_spaces: Query<&OpenSpace>,
+    mut status: ResMut<ExportStatus>,
 ) {
     for event in events.read() {
         let obj = build_obj(buildings.iter(), open_spaces.iter());
+        let bytes = obj.len();
 
         match std::fs::write(&event.filename, obj) {
-            Ok(()) => bevy::log::info!("exported city to {}", event.filename),
-            Err(e) => bevy::log::error!("failed to export {}: {e}", event.filename),
+            Ok(()) => {
+                let where_to = std::env::current_dir()
+                    .map(|d| d.join(&event.filename).display().to_string())
+                    .unwrap_or_else(|_| event.filename.clone());
+                bevy::log::info!("exported city to {where_to}");
+                status.0 = format!("Wrote {} KB to {}", bytes / 1024, event.filename);
+            }
+            Err(e) => {
+                bevy::log::error!("failed to export {}: {e}", event.filename);
+                status.0 = format!("Export failed: {e}");
+            }
         }
     }
 }

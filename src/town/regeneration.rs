@@ -350,6 +350,71 @@ mod tests {
     }
 
     #[test]
+    fn test_each_preset_builds_a_distinct_city() {
+        use crate::core::Preset;
+
+        let build = |params: Params| {
+            let mut app = test_app();
+            *app.world_mut().resource_mut::<Params>() = params;
+            app.world_mut().write_message(RegenerateEvent {
+                seed: config::INITIAL_SEED,
+                user_edit: false,
+                rebuild_skeleton: true,
+            });
+            app.update();
+            let buildings = app
+                .world_mut()
+                .query::<&Building>()
+                .iter(app.world())
+                .count();
+            let sides = app.world().resource::<SkeletonData>().boundary.len();
+            (buildings, sides)
+        };
+
+        let mut seen = Vec::new();
+        for preset in Preset::ALL {
+            let (buildings, sides) = build(preset.params());
+            assert!(
+                buildings > 0,
+                "{preset:?} produced a city with no buildings"
+            );
+            assert_eq!(
+                sides,
+                preset.params().boundary_vertex_count,
+                "{preset:?} boundary sides did not take effect"
+            );
+            seen.push((preset, buildings));
+        }
+
+        // Medieval is dense and fine-grained; Suburb is sparse and coarse.
+        let count = |p: Preset| seen.iter().find(|(x, _)| *x == p).unwrap().1;
+        assert!(
+            count(Preset::Medieval) > count(Preset::Suburb),
+            "Medieval ({}) should be denser than Suburb ({})",
+            count(Preset::Medieval),
+            count(Preset::Suburb)
+        );
+    }
+
+    #[test]
+    fn test_preset_does_not_touch_the_seed() {
+        // Applying a preset changes params only; the seed is the user's.
+        use crate::core::Preset;
+        let mut app = test_app();
+        let before = app.world().resource::<Seed>().0;
+
+        *app.world_mut().resource_mut::<Params>() = Preset::Medieval.params();
+        app.world_mut().write_message(RegenerateEvent {
+            seed: before,
+            user_edit: false,
+            rebuild_skeleton: true,
+        });
+        app.update();
+
+        assert_eq!(app.world().resource::<Seed>().0, before);
+    }
+
+    #[test]
     fn test_bigger_min_area_makes_fewer_buildings() {
         let build_with = |min_area: f32| {
             let mut app = test_app();

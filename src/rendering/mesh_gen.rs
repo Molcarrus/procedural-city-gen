@@ -10,11 +10,18 @@ use crate::{
 };
 
 pub fn polygon_to_footprint(polygon: &Polygon) -> Mesh {
-    if polygon.len() < 3 {
+    polygon_to_footprint_at(polygon, 0.0)
+}
+
+/// A flat fan-triangulated polygon at height `y`. Used for block footprints,
+/// open space, courtyards and the street surface, which only differ in the
+/// height they sit at and the material applied to them.
+pub fn polygon_to_footprint_at(polygon: &Polygon, y: f32) -> Mesh {
+    let area = polygon_area(polygon);
+    if polygon.len() < 3 || area.abs() < 1e-4 {
         return empty_mesh();
     }
 
-    let area = polygon_area(polygon);
     let centroid = polygon_centroid(polygon, area);
 
     let mut positions = Vec::new();
@@ -26,12 +33,12 @@ pub fn polygon_to_footprint(polygon: &Polygon) -> Mesh {
     let uv_width = (max_x - min_x).max(f32::EPSILON);
     let uv_height = (max_y - min_y).max(f32::EPSILON);
 
-    positions.push([centroid.x, 0.0, centroid.y]);
+    positions.push([centroid.x, y, centroid.y]);
     normals.push([0.0, 1.0, 0.0]);
     uvs.push([0.5, 0.5]);
 
     for vertex in polygon.iter() {
-        positions.push([vertex.x, 0.0, vertex.y]);
+        positions.push([vertex.x, y, vertex.y]);
         normals.push([0.0, 1.0, 0.0]);
         uvs.push([
             (vertex.x - min_x) / uv_width,
@@ -50,11 +57,11 @@ pub fn polygon_to_footprint(polygon: &Polygon) -> Mesh {
 }
 
 pub fn polygon_to_building(polygon: &Polygon, wall_height: f32) -> Mesh {
-    if polygon.len() < 3 {
+    let area = polygon_area(polygon);
+    if polygon.len() < 3 || area.abs() < 1e-4 {
         return empty_mesh();
     }
 
-    let area = polygon_area(polygon);
     let centroid = polygon_centroid(polygon, area);
 
     let mut positions = Vec::new();
@@ -126,6 +133,24 @@ pub fn polygon_to_building(polygon: &Polygon, wall_height: f32) -> Mesh {
         let next = top_center + 1 + ((i + 1) % polygon.len()) as u32;
         indices.extend([top_center, next, curr]);
     }
+
+    build_mesh(positions, normals, uvs, indices)
+}
+
+/// A flat square centred on the origin at height `y`, facing up.
+/// Used for the decorative water plane.
+pub fn water_plane(half_extent: f32, y: f32) -> Mesh {
+    let h = half_extent.max(f32::EPSILON);
+
+    let positions = vec![
+        [-h, y, -h],
+        [h, y, -h],
+        [h, y, h],
+        [-h, y, h],
+    ];
+    let normals = vec![[0.0, 1.0, 0.0]; 4];
+    let uvs = vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]];
+    let indices = vec![0, 2, 1, 0, 3, 2];
 
     build_mesh(positions, normals, uvs, indices)
 }

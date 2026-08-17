@@ -1,4 +1,4 @@
-use bevy::math::{Vec2, Vec3, VectorSpace};
+use bevy::math::{Vec2, Vec3};
 use spade::{DelaunayTriangulation, LastUsedVertexHintGenerator, Point2, Triangulation};
 
 use crate::{
@@ -113,7 +113,7 @@ pub fn build_voronoi(
 
         let has_extreme = circumcenter_indices.iter().any(|&ci| {
             let c = circumcenters[ci];
-            (c.x.powi(2) + c.x.powi(2)).sqrt() > extreme_threshold
+            (c.x.powi(2) + c.z.powi(2)).sqrt() > extreme_threshold
         });
         if has_extreme {
             continue;
@@ -149,7 +149,10 @@ fn merge_circumcenters(raw: &[Vec3], threshold: f32) -> (Vec<Vec3>, Vec<usize>) 
             continue;
         }
 
-        let mut cluster = vec![];
+        // The cluster must contain `i` itself: otherwise a circumcenter with no
+        // near neighbours averages an empty set (0/0 -> NaN) and never gets an
+        // entry in `index_mapping`.
+        let mut cluster = vec![i];
         used[i] = true;
 
         for j in (i + 1)..raw.len() {
@@ -281,6 +284,49 @@ mod tests {
         ];
         let (merged, _mapping) = merge_circumcenters(&pts, 0.1);
         assert_eq!(merged.len(), 1);
+    }
+
+    #[test]
+    fn test_merge_circumcenters_singletons_keep_position() {
+        // A point with no near neighbour must keep its own coordinates,
+        // not become NaN from averaging an empty cluster.
+        let pts = vec![
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(10.0, 0.0, 5.0),
+            Vec3::new(20.0, 0.0, -5.0),
+        ];
+        let (merged, mapping) = merge_circumcenters(&pts, 0.01);
+        assert_eq!(merged.len(), 3);
+        for (i, m) in merged.iter().enumerate() {
+            assert!(m.is_finite(), "merged[{i}] is not finite: {m:?}");
+        }
+        // Identity mapping when nothing merges.
+        for (i, &m) in mapping.iter().enumerate() {
+            assert_eq!(m, i, "mapping[{i}] should be {i}");
+        }
+        assert!((merged[1].x - 10.0).abs() < 1e-5);
+        assert!((merged[1].z - 5.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_merge_circumcenters_mapping_points_at_own_cluster() {
+        // Two tight pairs, far apart from each other.
+        let pts = vec![
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(0.001, 0.0, 0.0),
+            Vec3::new(50.0, 0.0, 0.0),
+            Vec3::new(50.001, 0.0, 0.0),
+        ];
+        let (merged, mapping) = merge_circumcenters(&pts, 0.1);
+        assert_eq!(merged.len(), 2);
+        // Every raw index maps to a cluster whose position is near the original.
+        for (raw_idx, &new_idx) in mapping.iter().enumerate() {
+            assert!(new_idx < merged.len());
+            assert!(
+                pts[raw_idx].distance(merged[new_idx]) < 0.1,
+                "raw {raw_idx} mapped to a distant cluster"
+            );
+        }
     }
 
     #[test]

@@ -45,7 +45,17 @@ pub fn handle_regeneration(
 
         match *generation_mode {
             GenerationMode::Auto => {
-                if seed_changed {
+                if seed_changed || event.rebuild_skeleton {
+                    // Rebuild the boundary from params first, so vertex count
+                    // and scale take effect; the pipeline itself reuses whatever
+                    // boundary and road path the skeleton currently holds.
+                    skeleton.boundary = rebuild_boundary(
+                        params.boundary_vertex_count,
+                        params.boundary_scale,
+                        event.seed,
+                        &[],
+                    );
+                    skeleton.boundary_offsets = vec![Vec2::ZERO; skeleton.boundary.len()];
                     run_generation_pipeline(&mut skeleton, &params, event.seed);
                 }
             }
@@ -203,5 +213,164 @@ fn handle_manual_regeneration(
 
             apply_voronoi_to_skeleton(skeleton, all_generators, voronoi);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bevy::{
+        app::{App, Update},
+        asset::Assets,
+        ecs::component::Component,
+    };
+
+    use crate::core::{Block, Building};
+
+    /// A headless app wired with exactly what `handle_regeneration` touches.
+    /// `Assets::default()` is self-contained, so no AssetPlugin is needed.
+    fn test_app() -> App {
+        let mut app = App::new();
+        app.add_message::<RegenerateEvent>()
+            .insert_resource(Assets::<Mesh>::default())
+            .insert_resource(Assets::<StandardMaterial>::default())
+            .insert_resource(Seed(config::INITIAL_SEED))
+            .insert_resource(Params::default())
+            .insert_resource(crate::town::build_initial_skeleton(
+                &Params::default(),
+                config::INITIAL_SEED,
+            ))
+            .insert_resource(Is3D(true))
+            .insert_resource(GenerationMode::default())
+            .insert_resource(EditMode::default())
+            .add_systems(Update, handle_regeneration);
+        app
+    }
+
+    fn count<C: Component>(app: &mut App) -> usize {
+        app.world_mut().query::<&C>().iter(app.world()).count()
+    }
+
+    #[test]
+    fn test_regenerate_event_builds_a_town() {
+        let mut app = test_app();
+        assert_eq!(count::<Town>(&mut app), 0, "town exists before any event");
+
+        app.world_mut().write_message(RegenerateEvent {
+            seed: config::INITIAL_SEED,
+            user_edit: false,
+            rebuild_skeleton: false,
+        });
+        app.update();
+
+        assert_eq!(count::<Town>(&mut app), 1);
+        assert!(count::<Block>(&mut app) > 0, "no blocks were spawned");
+        assert!(count::<Building>(&mut app) > 0, "no buildings were spawned");
+    }
+
+    #[test]
+    fn test_regenerate_replaces_the_previous_town() {
+        // Two events must not leave two towns stacked on top of each other.
+        let mut app = test_app();
+
+        for _ in 0..3 {
+            app.world_mut().write_message(RegenerateEvent {
+                seed: config::INITIAL_SEED,
+                user_edit: false,
+                rebuild_skeleton: false,
+            });
+            app.update();
+        }
+
+        assert_eq!(
+            count::<Town>(&mut app),
+            1,
+            "regenerating repeatedly accumulated towns"
+        );
+    }
+
+    #[test]
+    fn test_randomize_path_changes_the_city() {
+        // What the Randomize button does: new seed + full skeleton rebuild.
+        let mut app = test_app();
+
+        app.world_mut().write_message(RegenerateEvent {
+            seed: config::INITIAL_SEED,
+            user_edit: false,
+            rebuild_skeleton: false,
+        });
+        app.update();
+        let before = count::<Building>(&mut app);
+        let boundary_before = app.world().resource::<SkeletonData>().boundary.clone();
+
+        app.world_mut().write_message(RegenerateEvent {
+            seed: 987_654_321,
+            user_edit: false,
+            rebuild_skeleton: true,
+        });
+        app.update();
+        let after = count::<Building>(&mut app);
+        let boundary_after = app.world().resource::<SkeletonData>().boundary.clone();
+
+        assert_eq!(app.world().resource::<Seed>().0, 987_654_321);
+        assert_ne!(
+            boundary_before, boundary_after,
+            "a new seed did not rebuild the skeleton"
+        );
+        assert!(after > 0, "the rebuilt city has no buildings");
+        assert_ne!(before, after, "the rebuilt city is identical");
+    }
+
+    #[test]
+    fn test_param_only_change_keeps_the_skeleton() {
+        // Cheap path: sliders that only affect subdivision reuse the skeleton.
+        let mut app = test_app();
+        app.world_mut().write_message(RegenerateEvent {
+            seed: config::INITIAL_SEED,
+            user_edit: false,
+            rebuild_skeleton: false,
+        });
+        app.update();
+        let boundary_before = app.world().resource::<SkeletonData>().boundary.clone();
+
+        app.world_mut().resource_mut::<Params>().min_building_area = 60.0;
+        app.world_mut().write_message(RegenerateEvent {
+            seed: config::INITIAL_SEED,
+            user_edit: false,
+            rebuild_skeleton: false,
+        });
+        app.update();
+
+        assert_eq!(
+            boundary_before,
+            app.world().resource::<SkeletonData>().boundary,
+            "a subdivision-only change rebuilt the skeleton"
+        );
+        assert!(count::<Building>(&mut app) > 0);
+    }
+
+    #[test]
+    fn test_bigger_min_area_makes_fewer_buildings() {
+        let build_with = |min_area: f32| {
+            let mut app = test_app();
+            app.world_mut().resource_mut::<Params>().min_building_area = min_area;
+            app.world_mut().write_message(RegenerateEvent {
+                seed: config::INITIAL_SEED,
+                user_edit: false,
+                rebuild_skeleton: false,
+            });
+            app.update();
+            app.world_mut()
+                .query::<&Building>()
+                .iter(app.world())
+                .count()
+        };
+
+        let small = build_with(8.0);
+        let large = build_with(80.0);
+        assert!(
+            large < small,
+            "raising min plot area did not reduce building count: {large} vs {small}"
+        );
     }
 }

@@ -1,4 +1,4 @@
-use bevy::math::{Vec2, VectorSpace};
+use bevy::math::Vec2;
 use spade::Point2;
 
 use crate::core::Polygon;
@@ -60,6 +60,124 @@ pub fn line_segment_intersection(p1: Vec2, p2: Vec2, p3: Vec2, p4: Vec2) -> Opti
     }
 }
 
+/// Intersection of two *infinite* lines, each given by a point and a direction.
+/// Returns `None` when the lines are parallel.
+///
+/// Unlike [`line_segment_intersection`] this ignores the extent of the inputs,
+/// which is what edge offsetting needs: neighbouring offset edges usually meet
+/// outside the span of either original edge.
+pub fn line_line_intersection(p1: Vec2, d1: Vec2, p2: Vec2, d2: Vec2) -> Option<Vec2> {
+    let denom = d1.x * d2.y - d1.y * d2.x;
+
+    if denom.abs() < 1e-6 {
+        return None;
+    }
+
+    let diff = p2 - p1;
+    let t = (diff.x * d2.y - diff.y * d2.x) / denom;
+
+    Some(p1 + d1 * t)
+}
+
+/// Shrinks a polygon inward by `distance`, offsetting every edge along its
+/// inward normal and re-intersecting neighbouring edges.
+///
+/// Returns `None` if the polygon collapses, inverts, or is too degenerate to
+/// offset - callers should treat that as "this polygon is too small to inset"
+/// rather than falling back to the original, which would overlap its neighbours.
+pub fn inset_polygon(polygon: &Polygon, distance: f32) -> Option<Polygon> {
+    let n = polygon.len();
+
+    if n < 3 {
+        return None;
+    }
+
+    if distance <= 0.0 {
+        return Some(polygon.clone());
+    }
+
+    let area = polygon_area(polygon);
+    if area.abs() < f32::EPSILON {
+        return None;
+    }
+
+    let is_ccw = area > 0.0;
+
+    // Offset each edge inward, keeping it as an (origin, direction) line.
+    let mut offset_lines = Vec::with_capacity(n);
+    for i in 0..n {
+        let start = polygon[i];
+        let end = polygon[(i + 1) % n];
+        let edge = end - start;
+
+        if edge.length_squared() < 1e-12 {
+            return None;
+        }
+
+        let dir = edge.normalize();
+        let inward = if is_ccw {
+            Vec2::new(-dir.y, dir.x)
+        } else {
+            Vec2::new(dir.y, -dir.x)
+        };
+
+        offset_lines.push((start + inward * distance, dir));
+    }
+
+    // Each new vertex is where consecutive offset edges meet.
+    let mut inset = Vec::with_capacity(n);
+    for i in 0..n {
+        let prev = (i + n - 1) % n;
+        let (prev_point, prev_dir) = offset_lines[prev];
+        let (curr_point, curr_dir) = offset_lines[i];
+
+        let vertex = line_line_intersection(prev_point, prev_dir, curr_point, curr_dir)?;
+
+        if !vertex.is_finite() {
+            return None;
+        }
+
+        inset.push(vertex);
+    }
+
+    let inset_area = polygon_area(&inset);
+
+    // An inset that flipped winding turned itself inside out, and one that grew
+    // means the offsets crossed over each other.
+    if inset_area.abs() < f32::EPSILON
+        || (inset_area > 0.0) != is_ccw
+        || inset_area.abs() >= area.abs()
+    {
+        return None;
+    }
+
+    Some(inset)
+}
+
+/// Scales a polygon about its own centroid. `factor` above 1.0 grows it, below
+/// 1.0 shrinks it.
+///
+/// Unlike [`inset_polygon`] this keeps the shape *similar* rather than holding
+/// edges a constant distance apart, which is what "a smaller copy in the middle"
+/// wants - a courtyard should echo the shape of its block.
+pub fn scale_polygon_about_centroid(polygon: &Polygon, factor: f32) -> Polygon {
+    if polygon.len() < 3 {
+        return polygon.clone();
+    }
+
+    let area = polygon_area(polygon);
+    if area.abs() < f32::EPSILON {
+        return polygon.clone();
+    }
+
+    let centroid = polygon_centroid(polygon, area);
+
+    polygon
+        .iter()
+        .map(|&v| centroid + (v - centroid) * factor)
+        .collect()
+}
+
 pub fn calculate_circumcenter(p1: Point2<f64>, p2: Point2<f64>, p3: Point2<f64>) -> (f64, f64) {
     let ax = p1.x;
     let ay = p1.y;
@@ -68,7 +186,7 @@ pub fn calculate_circumcenter(p1: Point2<f64>, p2: Point2<f64>, p3: Point2<f64>)
     let cx = p3.x;
     let cy = p3.y;
 
-    let d = 2.0 * (ax * (by - cy) + bx * (cy * ay) + cx * (ay - by));
+    let d = 2.0 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by));
 
     let centroid_x = (ax + bx + cx) / 3.0;
     let centroid_y = (ay + by + cy) / 3.0;
@@ -314,6 +432,131 @@ mod tests {
         // circumcenter should be at (1.0, 1/sqrt(3))
         assert!((cx - 1.0).abs() < 1e-4);
         assert!((cy - 1.0 / 3.0f64.sqrt()).abs() < 1e-4);
+    }
+
+    #[test]
+    fn test_line_line_intersection_beyond_segment_extent() {
+        // The lines meet at (2,2), well outside the span of either sample point.
+        let r = line_line_intersection(
+            Vec2::new(0.0, 2.0),
+            Vec2::new(1.0, 0.0),
+            Vec2::new(2.0, 0.0),
+            Vec2::new(0.0, 1.0),
+        );
+        assert!(approx_eq2(r.unwrap(), Vec2::new(2.0, 2.0)));
+    }
+
+    #[test]
+    fn test_line_line_intersection_parallel() {
+        let r = line_line_intersection(
+            Vec2::ZERO,
+            Vec2::new(1.0, 0.0),
+            Vec2::new(0.0, 5.0),
+            Vec2::new(1.0, 0.0),
+        );
+        assert!(r.is_none());
+    }
+
+    fn square(size: f32) -> Polygon {
+        vec![
+            Vec2::new(0.0, 0.0),
+            Vec2::new(size, 0.0),
+            Vec2::new(size, size),
+            Vec2::new(0.0, size),
+        ]
+    }
+
+    #[test]
+    fn test_inset_square_shrinks_by_distance() {
+        let inset = inset_polygon(&square(10.0), 1.0).unwrap();
+        assert_eq!(inset.len(), 4);
+        // A 10x10 square inset by 1 on every side is 8x8.
+        assert!(approx_eq(polygon_area(&inset).abs(), 64.0));
+        assert!(approx_eq2(inset[0], Vec2::new(1.0, 1.0)));
+        assert!(approx_eq2(inset[2], Vec2::new(9.0, 9.0)));
+    }
+
+    #[test]
+    fn test_inset_preserves_winding_for_cw_input() {
+        let mut cw = square(10.0);
+        cw.reverse();
+        let original = polygon_area(&cw);
+        let inset = inset_polygon(&cw, 1.0).unwrap();
+        let after = polygon_area(&inset);
+        assert!(
+            (original > 0.0) == (after > 0.0),
+            "inset flipped the winding"
+        );
+        assert!(approx_eq(after.abs(), 64.0));
+    }
+
+    #[test]
+    fn test_inset_rejects_collapse() {
+        // Inset by more than half the width - nothing sensible is left.
+        assert!(inset_polygon(&square(4.0), 5.0).is_none());
+    }
+
+    #[test]
+    fn test_inset_always_shrinks() {
+        let poly = square(20.0);
+        let original = polygon_area(&poly).abs();
+        for d in [0.5f32, 1.0, 2.0, 4.0] {
+            let inset = inset_polygon(&poly, d).expect("should inset");
+            let a = polygon_area(&inset).abs();
+            assert!(a < original, "inset by {d} did not shrink: {a} vs {original}");
+        }
+    }
+
+    #[test]
+    fn test_inset_degenerate_input() {
+        assert!(inset_polygon(&vec![Vec2::ZERO, Vec2::ONE], 1.0).is_none());
+        assert!(inset_polygon(&vec![], 1.0).is_none());
+    }
+
+    #[test]
+    fn test_inset_zero_distance_is_identity() {
+        let poly = square(10.0);
+        assert_eq!(inset_polygon(&poly, 0.0).unwrap(), poly);
+    }
+
+    #[test]
+    fn test_scale_polygon_about_centroid_shrinks_by_area_squared() {
+        let poly = square(10.0);
+        let half = scale_polygon_about_centroid(&poly, 0.5);
+        // Linear scale f changes area by f^2.
+        assert!(approx_eq(polygon_area(&half).abs(), 25.0));
+        // Centroid is preserved.
+        let c0 = polygon_centroid(&poly, polygon_area(&poly));
+        let c1 = polygon_centroid(&half, polygon_area(&half));
+        assert!(approx_eq2(c0, c1));
+    }
+
+    #[test]
+    fn test_scale_polygon_about_centroid_grows() {
+        let poly = square(10.0);
+        let big = scale_polygon_about_centroid(&poly, 1.2);
+        assert!(polygon_area(&big).abs() > polygon_area(&poly).abs());
+        assert_eq!(big.len(), poly.len());
+    }
+
+    #[test]
+    fn test_scale_polygon_about_centroid_degenerate() {
+        let line = vec![Vec2::ZERO, Vec2::ONE];
+        assert_eq!(scale_polygon_about_centroid(&line, 0.5), line);
+    }
+
+    #[test]
+    fn test_circumcenter_right_triangle() {
+        use spade::Point2;
+        // Right angle at the origin -> circumcenter is the hypotenuse midpoint.
+        // Unlike the equilateral case this does NOT coincide with the centroid,
+        // so it catches a wrong determinant instead of silently falling back.
+        let p1 = Point2::new(0.0f64, 0.0);
+        let p2 = Point2::new(4.0f64, 0.0);
+        let p3 = Point2::new(0.0f64, 3.0);
+        let (cx, cy) = calculate_circumcenter(p1, p2, p3);
+        assert!((cx - 2.0).abs() < 1e-4, "cx was {cx}, expected 2.0");
+        assert!((cy - 1.5).abs() < 1e-4, "cy was {cy}, expected 1.5");
     }
 
     #[test]

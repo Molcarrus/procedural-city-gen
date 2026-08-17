@@ -19,6 +19,13 @@ pub struct Params {
     pub boundary_inner_offset: f32,
     pub generator_count: usize,
     pub circumcenter_merge_threshold: f32,
+    pub street_width: f32,
+    pub plaza_chance: f32,
+    pub park_ratio: f32,
+    pub courtyard_chance: f32,
+    pub courtyard_ratio: f32,
+    pub water_enabled: bool,
+    pub water_level: f32,
 }
 
 impl Default for Params {
@@ -39,6 +46,13 @@ impl Default for Params {
             boundary_inner_offset: BOUNDARY_GENERATOR_INNER_OFFSET,
             generator_count: POINT_COUNT,
             circumcenter_merge_threshold: CIRCUMCENTER_MERGE_THRESHOLD,
+            street_width: STREET_WIDTH,
+            plaza_chance: PLAZA_CHANCE,
+            park_ratio: PARK_RATIO,
+            courtyard_chance: COURTYARD_CHANCE,
+            courtyard_ratio: COURTYARD_RATIO,
+            water_enabled: true,
+            water_level: WATER_LEVEL,
         }
     }
 }

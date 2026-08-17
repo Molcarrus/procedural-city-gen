@@ -72,7 +72,7 @@ pub fn bisect_polygon(
 
     if poly1.len() >= 3 && polygon_area(&poly1).abs() > 0.1 {
         let final_poly = if separation > 0.0 {
-            push_polygon_from_line(&poly2, line_start, line_end, separation * 0.5)
+            push_polygon_from_line(&poly1, line_start, line_end, separation * 0.5)
         } else {
             poly1
         };
@@ -223,6 +223,37 @@ mod tests {
         assert!(
             area_with_sep < area_no_sep,
             "separation should reduce total area"
+        );
+    }
+
+    #[test]
+    fn test_bisect_with_separation_keeps_halves_distinct() {
+        // With separation > 0 both halves must still be the two *different*
+        // sides of the cut, not the same half pushed twice.
+        let sq = unit_square();
+        let result = bisect_polygon(&sq, 0, 0.5, 0.0, 0.2);
+        assert_eq!(result.len(), 2);
+        assert_ne!(result[0], result[1], "both halves are the same polygon");
+
+        let c0 = polygon_centroid(&result[0], polygon_area(&result[0]));
+        let c1 = polygon_centroid(&result[1], polygon_area(&result[1]));
+        assert!(
+            c0.distance(c1) > 0.5,
+            "halves overlap: centroids {c0:?} and {c1:?}"
+        );
+    }
+
+    #[test]
+    fn test_bisect_with_separation_conserves_most_area() {
+        // Separation carves out an alley, but the halves together should still
+        // cover most of the original - not half of it duplicated.
+        let sq = unit_square();
+        let original = polygon_area(&sq).abs();
+        let result = bisect_polygon(&sq, 0, 0.5, 0.0, 0.2);
+        let total: f32 = result.iter().map(|p| polygon_area(p).abs()).sum();
+        assert!(
+            total > original * 0.7 && total <= original + 1e-3,
+            "total area {total} is implausible for original {original}"
         );
     }
 

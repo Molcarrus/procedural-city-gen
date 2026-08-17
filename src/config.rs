@@ -35,3 +35,27 @@ pub const MAX_WALL_HEIGHT: f32 = 6.0;
 
 pub const DEFAULT_BOUNDARY_VERTEX_COUNT: usize = 4;
 pub const DEFAULT_BOUNDARY_SCALE: f32 = 75.0;
+
+// --- street network ---
+/// Every block is inset by half of this, so the gap between two neighbouring
+/// blocks adds up to a full street width.
+pub const STREET_WIDTH: f32 = 3.0;
+/// Street surface sits just below the blocks so it shows through the gaps
+/// without z-fighting against block footprints at y = 0.
+pub const STREET_LEVEL: f32 = -0.06;
+/// The street surface is grown slightly past the boundary so blocks touching
+/// the edge still sit on paving.
+pub const STREET_SURFACE_MARGIN: f32 = 6.0;
+
+// --- open space ---
+pub const PLAZA_CHANCE: f32 = 0.14;
+/// Of the blocks reserved as open space, the fraction that become parks
+/// rather than paved plazas.
+pub const PARK_RATIO: f32 = 0.6;
+pub const COURTYARD_CHANCE: f32 = 0.28;
+/// Fraction of a block's "radius" kept clear at its centre for a courtyard.
+pub const COURTYARD_RATIO: f32 = 0.38;
+
+// --- water ---
+pub const WATER_LEVEL: f32 = -2.5;
+pub const WATER_EXTENT: f32 = 900.0;

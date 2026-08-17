@@ -27,18 +27,23 @@ mod geometry;
 mod rendering;
 mod subdivision;
 mod town;
+mod ui;
 mod voronoi;
 
 use core::*;
 
-use crate::town::TownPlugin;
+use crate::{town::TownPlugin, ui::UiPlugin};
 
 fn main() -> AppExit {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 mode: bevy::window::WindowMode::Windowed,
-                resolution: bevy::window::WindowResolution::new(1920, 1080),
+                // Physical pixels. Keep this comfortably smaller than any real
+                // display: a client area the size of the whole screen makes the
+                // window (borders + title bar) overflow it and open partly
+                // off-screen. `maximize_window` grows it to fit on startup.
+                resolution: bevy::window::WindowResolution::new(1280, 720),
                 ..Default::default()
             }),
             ..default()
@@ -48,6 +53,7 @@ fn main() -> AppExit {
         .add_plugins(WireframePlugin::default())
         .add_plugins(RtsCameraPlugin)
         .add_plugins(TownPlugin)
+        .add_plugins(UiPlugin)
         .insert_resource(WireframeConfig {
             global: true,
             default_color: Color::BLACK,
@@ -55,7 +61,6 @@ fn main() -> AppExit {
         .insert_resource(ClearColor(Color::BLACK))
         .insert_resource(Seed(config::INITIAL_SEED))
         .insert_resource(Params::default())
-        .insert_resource(SkeletonData::new_empty(vec![]))
         .insert_resource(GenerationMode::default())
         .insert_resource(EditMode::default())
         .insert_resource(DragState::default())

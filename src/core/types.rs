@@ -1,6 +1,6 @@
 use bevy::{
     ecs::{component::Component, resource::Resource},
-    math::{Vec2, Vec3, VectorSpace},
+    math::{Vec2, Vec3},
 };
 
 pub type Polygon = Vec<Vec2>;
@@ -107,7 +107,41 @@ pub struct Block {
 pub struct Building {
     pub id: u32,
     pub footprint: Polygon,
+    /// Kept so the exporter can rebuild the extrusion without touching meshes.
+    pub height: f32,
 }
+
+/// What a reserved open block is rendered as. Purely cosmetic - both kinds
+/// occupy a whole block and carry no buildings.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum OpenSpaceKind {
+    Park,
+    Plaza,
+}
+
+/// A Voronoi block reserved as open space instead of being subdivided.
+#[derive(Component)]
+pub struct OpenSpace {
+    pub block_id: u32,
+    pub kind: OpenSpaceKind,
+    pub polygon: Polygon,
+}
+
+/// The cleared middle of a block whose plots were pushed out to the edges.
+#[derive(Component)]
+pub struct Courtyard {
+    pub block_id: u32,
+    pub polygon: Polygon,
+}
+
+/// The paved surface the blocks sit on. Streets are the gaps between blocks,
+/// so this is what shows through them.
+#[derive(Component)]
+pub struct StreetSurface;
+
+/// Decorative water plane. Has no effect on generation.
+#[derive(Component)]
+pub struct Water;
 
 #[derive(Resource)]
 pub struct GizmosVisible(pub bool);
